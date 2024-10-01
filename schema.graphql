@@ -1,0 +1,69 @@
+# To improve query performance, we strongly suggest adding indexes to any field that you plan to filter or sort by
+# Add the `@index` or `@index(unique: true)` annotation after any non-key field
+# https://academy.subquery.network/build/graphql.html#indexing-by-non-primary-key-field
+
+type Claim @entity {
+  id: ID! # Index
+  transactionHash: String!
+  blockHeight: BigInt!
+  date: Date!
+  receiver: String!
+  amount: BigInt!
+}
+
+type DailyClaimSummary @entity {
+  id: ID! # this is the ISO string of the day e.g. '2023-03-26'
+  total_claimed: BigInt!
+}
+
+type MinterSplit @entity {
+  id: ID! # index
+  transactionHash: String!
+  blockHeight: BigInt!
+  date: Date!
+  recipient: String!
+  mint_amount: BigInt! # amount of minted p and y tokens
+}
+
+type MinterRedeem @entity {
+  id: ID! # Index
+  transactionHash: String!
+  blockHeight: BigInt!
+  date: Date!
+  sender: String!
+  amount: BigInt!
+}
+
+type AmmProvideLiquidity @entity {
+  id: ID! # Index
+  transactionHash: String!
+  blockHeight: BigInt!
+  date: Date!
+  recipient: String! # LP token recipient
+  amount: BigInt! # LP token amount
+}
+
+type AmmWithdrawLiquidity @entity {
+  id: ID! # Index
+  transactionHash: String!
+  blockHeight: BigInt!
+  date: Date!
+  sender: String!
+  amount: BigInt! # LP token amount
+}
+
+type AmmLPTokenSend @entity {
+  id: ID! # Index
+  transactionHash: String!
+  blockHeight: BigInt!
+  date: Date!
+  sender: String!
+  recipient: String!
+  amount: BigInt! # LP token amount
+}
+
+type PointsBalance @entity {
+  id: ID! # Index
+  address: String!
+  balance: BigInt!
+}

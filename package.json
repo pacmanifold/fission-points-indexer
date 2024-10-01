@@ -1,0 +1,41 @@
+{
+  "name": "fission-points-indexer",
+  "version": "0.0.1",
+  "description": "Subquery indexer for the Fission Finance points program.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "subql codegen && subql build",
+    "codegen": "subql codegen",
+    "start:docker": "docker-compose pull && docker-compose up --remove-orphans",
+    "dev": "subql codegen && subql build && docker-compose pull && docker-compose up --remove-orphans",
+    "prepack": "rm -rf dist && npm run build",
+    "test": "jest",
+    "build:develop": "NODE_ENV=develop subql codegen && NODE_ENV=develop subql build"
+  },
+  "homepage": "https://github.com/subquery/cosmos-subql-starter",
+  "repository": "github:subquery/cosmos-subql-starter",
+  "files": [
+    "dist",
+    "schema.graphql",
+    "project.yaml"
+  ],
+  "author": "Pacman <pacman@fission.finance>",
+  "license": "MIT",
+  "devDependencies": {
+    "@cosmjs/stargate": "^0.28.9",
+    "@subql/cli": "latest",
+    "@subql/node-cosmos": "latest",
+    "@subql/testing": "latest",
+    "@types/pino": "^7.0.5",
+    "dotenv": "latest",
+    "typescript": "^5.2.2"
+  },
+  "dependencies": {
+    "@subql/types-cosmos": "latest",
+    "@types/node": "^17.0.21",
+    "pino": "^7.8.0",
+    "pino-pretty": "^11.2.2",
+    "ts-proto": "^1.112.1",
+    "tslib": "^2.3.1"
+  }
+}
