@@ -70,6 +70,26 @@ const project: CosmosProject = {
         ],
       },
     },
+    {
+      kind: CosmosDatasourceKind.Runtime,
+      startBlock: 1,
+      mapping: {
+        file: "./dist/index.js",
+        handlers: [
+          {
+            handler: "handleMinterRedeemMsg",
+            kind: CosmosHandlerKind.Message,
+            filter: {
+              type: "/cosmwasm.wasm.v1.MsgExecuteContract",
+              contractCall: "redeem",
+              values: {
+                contract: MINTER_ADDRESS,
+              },
+            },
+          },
+        ],
+      },
+    },
   ],
 };
 
