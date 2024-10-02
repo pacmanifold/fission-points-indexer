@@ -52,18 +52,28 @@ type AmmWithdrawLiquidity @entity {
   amount: BigInt! # LP token amount
 }
 
-type AmmLPTokenSend @entity {
-  id: ID! # Index
+type Transfer @entity {
+  id: ID! # Index {transactionHash}-{msgIdx}
   transactionHash: String!
   blockHeight: BigInt!
   date: Date!
   sender: String!
   recipient: String!
-  amount: BigInt! # LP token amount
+  denom: String!
+  amount: BigInt!
+}
+
+type TokenBalance @entity {
+  id: ID! # Index {blockHeight}-{address}-{denom}
+  blockHeight: BigInt!
+  address: String!
+  denom: String!
+  balance: BigInt!
 }
 
 type PointsBalance @entity {
-  id: ID! # Index
+  id: ID! # Index {blockHeight}-{address}
+  blockHeight: BigInt!
   address: String!
   balance: BigInt!
 }

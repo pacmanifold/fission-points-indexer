@@ -6,7 +6,7 @@ import {
 
 import * as dotenv from "dotenv";
 import path from "path";
-import { MINTER_ADDRESS } from "./config";
+import { MINTER_ADDRESS } from "./src/config";
 const mode = process.env.NODE_ENV || "production";
 
 // Load the appropriate .env file
@@ -57,6 +57,17 @@ const project: CosmosProject = {
         file: "./dist/index.js",
         handlers: [
           {
+            handler: "handleMinterRedeemMsg",
+            kind: CosmosHandlerKind.Message,
+            filter: {
+              type: "/cosmwasm.wasm.v1.MsgExecuteContract",
+              contractCall: "redeem",
+              values: {
+                contract: MINTER_ADDRESS,
+              },
+            },
+          },
+          {
             handler: "handleMinterSplitMsg",
             kind: CosmosHandlerKind.Message,
             filter: {
@@ -67,23 +78,13 @@ const project: CosmosProject = {
               },
             },
           },
-        ],
-      },
-    },
-    {
-      kind: CosmosDatasourceKind.Runtime,
-      startBlock: 1,
-      mapping: {
-        file: "./dist/index.js",
-        handlers: [
           {
-            handler: "handleMinterRedeemMsg",
-            kind: CosmosHandlerKind.Message,
+            handler: "handleTransfer",
+            kind: CosmosHandlerKind.Event,
             filter: {
-              type: "/cosmwasm.wasm.v1.MsgExecuteContract",
-              contractCall: "redeem",
-              values: {
-                contract: MINTER_ADDRESS,
+              type: "transfer",
+              messageFilter: {
+                type: "/cosmos.bank.v1beta1.MsgSend",
               },
             },
           },

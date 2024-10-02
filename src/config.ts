@@ -3,4 +3,6 @@ export const MINTER_ADDRESS =
 export const AMM_ADDRESS =
   "neutron16n4wghx4leskv95r48sx603vcg44ussrtuz9x4v4lah3vvnmlxeqzjl7vf";
 
+export const TRACKED_DENOMS: string[] = [];
+
 export const POINTS_PER_BLOCK = 1_000_000_000;
