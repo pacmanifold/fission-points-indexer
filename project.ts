@@ -57,28 +57,6 @@ const project: CosmosProject = {
         file: "./dist/index.js",
         handlers: [
           {
-            handler: "handleMinterRedeemMsg",
-            kind: CosmosHandlerKind.Message,
-            filter: {
-              type: "/cosmwasm.wasm.v1.MsgExecuteContract",
-              contractCall: "redeem",
-              values: {
-                contract: MINTER_ADDRESS,
-              },
-            },
-          },
-          {
-            handler: "handleMinterSplitMsg",
-            kind: CosmosHandlerKind.Message,
-            filter: {
-              type: "/cosmwasm.wasm.v1.MsgExecuteContract",
-              contractCall: "split",
-              values: {
-                contract: MINTER_ADDRESS,
-              },
-            },
-          },
-          {
             handler: "handleTransfer",
             kind: CosmosHandlerKind.Event,
             filter: {
@@ -86,6 +64,20 @@ const project: CosmosProject = {
               messageFilter: {
                 type: "/cosmos.bank.v1beta1.MsgSend",
               },
+            },
+          },
+          {
+            handler: "handleBurnEvent",
+            kind: CosmosHandlerKind.Event,
+            filter: {
+              type: "tf_burn",
+            },
+          },
+          {
+            handler: "handleMintEvent",
+            kind: CosmosHandlerKind.Event,
+            filter: {
+              type: "tf_mint",
             },
           },
         ],

@@ -5,8 +5,10 @@ import {
   CosmosTransaction,
 } from "@subql/types-cosmos";
 import {
+  Burn,
   Claim,
   DailyClaimSummary,
+  Mint,
   MinterRedeem,
   MinterSplit,
   TokenBalance,
@@ -14,184 +16,9 @@ import {
 } from "../types";
 import { logger } from "../logger";
 import { coin, parseCoins } from "@cosmjs/proto-signing";
+import { QueryClient } from "@cosmjs/stargate";
+import { Tendermint34Client } from "@cosmjs/tendermint-rpc";
 import { TRACKED_DENOMS } from "../config";
-
-type AirdropClaimMessageType = {
-  type: string;
-  sender: string;
-  contract: string;
-  msg: {
-    claim: {
-      amount: string;
-      proof: string[];
-    };
-  };
-};
-
-type MinterSplitMessageType = {
-  type: string;
-  sender: string;
-  contract: string;
-  msg: {
-    split: {
-      auto_stake: boolean;
-      maturity: number;
-      recipient?: string | null;
-    };
-  };
-};
-
-type MinterRedeemMessageType = {
-  type: string;
-  sender: string;
-  contract: string;
-  msg: {
-    redeem: {
-      recipient?: string | null;
-    };
-  };
-};
-
-/*
-export async function handleBlock(block: CosmosBlock): Promise<void> {
-  // If you want to index each block in Cosmos (Archway), you could do that here
-}
-
-export async function handleTransaction(tx: CosmosTransaction): Promise<void> {
-  // If you want to index each transaction in Cosmos (Archway), you could do that here
-  const transactionRecord = Transaction.create({
-    id: tx.hash,
-    blockHeight: BigInt(tx.block.block.header.height),
-    timestamp: tx.block.block.header.time,
-  });
-  await transactionRecord.save();
-}
-*/
-
-async function checkGetDailyClaim(date: Date): Promise<DailyClaimSummary> {
-  // Create the ID from the iso date string (e.g. '2023-03-26')
-  // Timestamps are in seconds, need to convert to ms
-  const id = date.toISOString().substring(0, 10);
-  // Read to see if there is an existing aggregation record
-  let dailyClaimSummary = await DailyClaimSummary.get(id);
-  if (!dailyClaimSummary) {
-    // This is a new day! Create a new aggregation
-    dailyClaimSummary = DailyClaimSummary.create({
-      id,
-      total_claimed: BigInt(0),
-    });
-  }
-  return dailyClaimSummary;
-}
-
-export async function handleAirdropClaim(
-  msg: CosmosMessage<AirdropClaimMessageType>
-): Promise<void> {
-  // Example https://www.mintscan.io/neutron/txs/156FE31585BD75E06EE337CEA908C37EA0434CC49943B4860E7AABE2475B6B01?height=1437614
-  logger.info(
-    `New Airdrop Claim at block ${msg.block.header.height.toString()}`
-  );
-
-  // Claim records are created from on chain data
-  const airdropClaimRecord = Claim.create({
-    id: `${msg.tx.hash}-${msg.idx}`,
-    blockHeight: BigInt(msg.block.block.header.height),
-    date: new Date(msg.block.header.time.toISOString()),
-    transactionHash: msg.tx.hash,
-    receiver: msg.msg.decodedMsg.sender,
-    amount: BigInt(msg.msg.decodedMsg.msg.claim.amount),
-  });
-
-  // We update the daily aggregation
-  const dailyClaimSummary = await checkGetDailyClaim(airdropClaimRecord.date);
-  dailyClaimSummary.total_claimed += airdropClaimRecord.amount;
-
-  // Save data to the store
-  await dailyClaimSummary.save();
-  await airdropClaimRecord.save();
-}
-
-/*
-export async function handleEvent(event: CosmosEvent): Promise<void> {
-  const eventRecord = ExecuteEvent.create({
-    id: `${event.tx.hash}-${event.msg.idx}-${event.idx}`,
-    blockHeight: BigInt(event.block.block.header.height),
-    txHash: event.tx.hash,
-    contractAddress: event.event.attributes.find(attr => attr.key === '_contract_address').value
-  });
-
-  await eventRecord.save();
-}
-*/
-
-export async function handleMinterSplitMsg(
-  msg: CosmosMessage<MinterSplitMessageType>
-): Promise<void> {
-  logger.info(
-    `New Minter Split at block ${msg.block.header.height.toString()}`
-  );
-
-  const attrValue = msg.tx.tx.events
-    .find((event) => event.type === "wasm-fission/minter/split")
-    ?.attributes.find((attr) => attr.key === "mint_amount")?.value;
-
-  // Convert Uint8Array to string if tendermint 34
-  const mintAmount =
-    attrValue instanceof Uint8Array
-      ? new TextDecoder("utf-8").decode(attrValue)
-      : attrValue;
-
-  if (!mintAmount) {
-    logger.error(`Mint amount is undefined`);
-    return;
-  }
-
-  logger.info(`Mint amount: ${mintAmount}`);
-
-  const splitRecord = MinterSplit.create({
-    id: `${msg.tx.hash}-${msg.idx}`,
-    blockHeight: BigInt(msg.block.block.header.height),
-    date: new Date(msg.block.header.time.toISOString()),
-    transactionHash: msg.tx.hash,
-    mint_amount: BigInt(mintAmount),
-    recipient:
-      msg.msg.decodedMsg.msg.split.recipient || msg.msg.decodedMsg.sender,
-  });
-}
-
-export async function handleMinterRedeemMsg(
-  msg: CosmosMessage<MinterRedeemMessageType>
-): Promise<void> {
-  logger.info(
-    `New Minter Redeem at block ${msg.block.header.height.toString()}`
-  );
-
-  const attrValue = msg.tx.tx.events
-    .find((event) => event.type === "wasm-fission/minter/redeem")
-    ?.attributes.find((attr) => attr.key === "py_amount")?.value;
-
-  const redeemAmount =
-    attrValue instanceof Uint8Array
-      ? new TextDecoder("utf-8").decode(attrValue)
-      : attrValue;
-
-  if (!redeemAmount) {
-    logger.error(`Redeem amount is undefined`);
-    return;
-  }
-
-  logger.info(`Redeem amount: ${redeemAmount}`);
-
-  const redeemRecord = MinterRedeem.create({
-    id: `${msg.tx.hash}-${msg.idx}`,
-    blockHeight: BigInt(msg.block.block.header.height),
-    date: new Date(msg.block.header.time.toISOString()),
-    transactionHash: msg.tx.hash,
-    amount: BigInt(redeemAmount),
-    sender: msg.msg.decodedMsg.sender,
-  });
-  await redeemRecord.save();
-}
 
 export async function handleTransferEvent(event: CosmosEvent): Promise<void> {
   const blockHeight = BigInt(event.block.block.header.height);
@@ -307,6 +134,153 @@ export async function handleTransferEvent(event: CosmosEvent): Promise<void> {
         recipient,
         denom,
         recipientBalance.balance + BigInt(amount)
+      )
+    );
+  }
+}
+
+export async function handleMintEvent(event: CosmosEvent): Promise<void> {
+  const blockHeight = BigInt(event.block.block.header.height);
+
+  logger.info(`New mint at block ${blockHeight.toString()}`);
+
+  const amountValue = event.event.attributes.find(
+    (attr) => attr.key === "amount"
+  )?.value;
+  const amount =
+    amountValue instanceof Uint8Array
+      ? new TextDecoder("utf-8").decode(amountValue)
+      : amountValue;
+
+  const recipientValue = event.event.attributes.find(
+    (attr) => attr.key === "mint_to_address"
+  )?.value;
+  const recipient =
+    recipientValue instanceof Uint8Array
+      ? new TextDecoder("utf-8").decode(recipientValue)
+      : recipientValue;
+
+  if (!amount || !recipient) {
+    logger.error(
+      `Amount or recipient is undefined in event ${JSON.stringify(event.event)}`
+    );
+    return;
+  }
+
+  logger.info(`Mint amount: ${amount}, recipient: ${recipient}`);
+
+  const coins = parseCoins(amount);
+
+  for (const { denom, amount } of coins) {
+    if (!TRACKED_DENOMS.includes(denom)) {
+      continue;
+    }
+
+    const mintRecord = Mint.create({
+      id: `${event.tx.hash}-${event.idx}`,
+      blockHeight,
+      date: new Date(event.block.header.time.toISOString()),
+      transactionHash: event.tx.hash,
+      denom,
+      amount: BigInt(amount),
+    });
+    await mintRecord.save();
+
+    // Get the latest token balance for the recipient
+    const recipientBalance = (
+      await TokenBalance.getByFields(
+        [
+          ["address", "=", recipient],
+          ["denom", "=", denom],
+        ],
+        { orderBy: "blockHeight", orderDirection: "DESC", limit: 1 }
+      )
+    )[0];
+
+    // Update the token balance for the recipient, if it exists, otherwise create it
+    await store.set(
+      "TokenBalance",
+      `${blockHeight.toString()}-${recipient}-${denom}`,
+      new TokenBalance(
+        `${blockHeight.toString()}-${recipient}-${denom}`,
+        blockHeight,
+        recipient,
+        denom,
+        recipientBalance.balance + BigInt(amount)
+      )
+    );
+  }
+}
+
+export async function handleBurnEvent(event: CosmosEvent): Promise<void> {
+  const blockHeight = BigInt(event.block.block.header.height);
+
+  logger.info(`New burn at block ${blockHeight.toString()}`);
+
+  const amountValue = event.event.attributes.find(
+    (attr) => attr.key === "amount"
+  )?.value;
+  const amount =
+    amountValue instanceof Uint8Array
+      ? new TextDecoder("utf-8").decode(amountValue)
+      : amountValue;
+
+  const senderValue = event.event.attributes.find(
+    (attr) => attr.key === "burn_from_address"
+  )?.value;
+  const sender =
+    senderValue instanceof Uint8Array
+      ? new TextDecoder("utf-8").decode(senderValue)
+      : senderValue;
+
+  if (!amount || !sender) {
+    logger.error(
+      `Amount or sender is undefined in event ${JSON.stringify(event.event)}`
+    );
+    return;
+  }
+
+  logger.info(`Burn amount: ${amount}, sender: ${sender}`);
+
+  const coins = parseCoins(amount);
+
+  for (const { denom, amount } of coins) {
+    if (!TRACKED_DENOMS.includes(denom)) {
+      continue;
+    }
+
+    // Create the burn record
+    const burnRecord = Burn.create({
+      id: `${event.tx.hash}-${event.idx}`,
+      blockHeight,
+      date: new Date(event.block.header.time.toISOString()),
+      transactionHash: event.tx.hash,
+      denom,
+      amount: BigInt(amount),
+    });
+    await burnRecord.save();
+
+    // Get the latest token balance for the sender
+    const senderBalance = (
+      await TokenBalance.getByFields(
+        [
+          ["address", "=", sender],
+          ["denom", "=", denom],
+        ],
+        { orderBy: "blockHeight", orderDirection: "DESC", limit: 1 }
+      )
+    )[0];
+
+    // Update the token balance for the sender, if it exists, otherwise create it
+    await store.set(
+      "TokenBalance",
+      `${blockHeight.toString()}-${sender}-${denom}`,
+      new TokenBalance(
+        `${blockHeight.toString()}-${sender}-${denom}`,
+        blockHeight,
+        sender,
+        denom,
+        senderBalance.balance - BigInt(amount)
       )
     );
   }

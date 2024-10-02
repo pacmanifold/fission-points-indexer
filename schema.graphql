@@ -2,56 +2,6 @@
 # Add the `@index` or `@index(unique: true)` annotation after any non-key field
 # https://academy.subquery.network/build/graphql.html#indexing-by-non-primary-key-field
 
-type Claim @entity {
-  id: ID! # Index
-  transactionHash: String!
-  blockHeight: BigInt!
-  date: Date!
-  receiver: String!
-  amount: BigInt!
-}
-
-type DailyClaimSummary @entity {
-  id: ID! # this is the ISO string of the day e.g. '2023-03-26'
-  total_claimed: BigInt!
-}
-
-type MinterSplit @entity {
-  id: ID! # index
-  transactionHash: String!
-  blockHeight: BigInt!
-  date: Date!
-  recipient: String!
-  mint_amount: BigInt! # amount of minted p and y tokens
-}
-
-type MinterRedeem @entity {
-  id: ID! # Index
-  transactionHash: String!
-  blockHeight: BigInt!
-  date: Date!
-  sender: String!
-  amount: BigInt!
-}
-
-type AmmProvideLiquidity @entity {
-  id: ID! # Index
-  transactionHash: String!
-  blockHeight: BigInt!
-  date: Date!
-  recipient: String! # LP token recipient
-  amount: BigInt! # LP token amount
-}
-
-type AmmWithdrawLiquidity @entity {
-  id: ID! # Index
-  transactionHash: String!
-  blockHeight: BigInt!
-  date: Date!
-  sender: String!
-  amount: BigInt! # LP token amount
-}
-
 type Transfer @entity {
   id: ID! # Index {transactionHash}-{msgIdx}
   transactionHash: String!
@@ -59,6 +9,24 @@ type Transfer @entity {
   date: Date!
   sender: String!
   recipient: String!
+  denom: String!
+  amount: BigInt!
+}
+
+type Mint @entity {
+  id: ID! # Index {transactionHash}-{msgIdx}
+  transactionHash: String!
+  blockHeight: BigInt!
+  date: Date!
+  denom: String!
+  amount: BigInt!
+}
+
+type Burn @entity {
+  id: ID! # Index {transactionHash}-{msgIdx}
+  transactionHash: String!
+  blockHeight: BigInt!
+  date: Date!
   denom: String!
   amount: BigInt!
 }
