@@ -2,7 +2,7 @@ import { CosmosEvent, CosmosBlock } from "@subql/types-cosmos";
 import { Burn, Mint, PointsBalance, TokenBalance, Transfer } from "../types";
 import { logger } from "../logger";
 import { parseCoins } from "@cosmjs/proto-signing";
-import { POINTS_MULTIPLIERS, TRACKED_DENOMS } from "../config";
+import { TRACKED_DENOMS } from "../config";
 
 export async function handleTransferEvent(event: CosmosEvent): Promise<void> {
   const blockHeight = BigInt(event.block.block.header.height);
@@ -59,7 +59,7 @@ export async function handleTransferEvent(event: CosmosEvent): Promise<void> {
 
   // For each of the sent coins, create a transfer record if the denom should be tracked
   for (const { denom, amount } of coins) {
-    if (!TRACKED_DENOMS.includes(denom)) {
+    if (!TRACKED_DENOMS.some(token => token.denom === denom)) {
       continue;
     }
 
@@ -156,7 +156,7 @@ export async function handleMintEvent(event: CosmosEvent): Promise<void> {
   const coins = parseCoins(amount);
 
   for (const { denom, amount } of coins) {
-    if (!TRACKED_DENOMS.includes(denom)) {
+    if (!TRACKED_DENOMS.some(token => token.denom === denom)) {
       continue;
     }
 
@@ -229,7 +229,7 @@ export async function handleBurnEvent(event: CosmosEvent): Promise<void> {
   const coins = parseCoins(amount);
 
   for (const { denom, amount } of coins) {
-    if (!TRACKED_DENOMS.includes(denom)) {
+    if (!TRACKED_DENOMS.some(token => token.denom === denom)) {
       continue;
     }
 
@@ -274,6 +274,7 @@ export async function handleAccumulatePoints(
   block: CosmosBlock
 ): Promise<void> {
   const currentBlockHeight = BigInt(block.block.header.height);
+  const currentBlockTime = block.block.header.time.getTime() / 1000;
   const previousBlockHeight = currentBlockHeight - BigInt(1);
 
   logger.info(`Accumulating points at block ${currentBlockHeight.toString()}`);
@@ -282,16 +283,21 @@ export async function handleAccumulatePoints(
 
   // For each tracked denom loop over all the token balances from the previous block
   // and accumulate the points balances based on the multipliers
-  for (const denom in TRACKED_DENOMS) {
+  for (const token of TRACKED_DENOMS) {
     const tokenBalances = await TokenBalance.getByFields([
-      ["denom", "=", denom],
+      ["denom", "=", token.denom],
       ["blockHeight", "=", previousBlockHeight.toString()],
     ]);
 
-    const multiplier = POINTS_MULTIPLIERS[denom];
+    const multiplier = token.multiplier;
 
     // Update the points for each address
     for (const tokenBalance of tokenBalances) {
+      // Filter out tokens that have matured
+      if (token.maturity <= currentBlockTime) {
+        continue;
+      }
+
       const points = tokenBalance.balance * multiplier;
       const currentPoints =
         pointsThisBlock.get(tokenBalance.address) || BigInt(0);
