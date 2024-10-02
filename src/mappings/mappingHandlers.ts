@@ -2,11 +2,10 @@ import { CosmosEvent, CosmosBlock } from "@subql/types-cosmos";
 import { Burn, Mint, PointsBalance, TokenBalance, Transfer } from "../types";
 import { logger } from "../logger";
 import { parseCoins } from "@cosmjs/proto-signing";
-import { FILTERED_ADDRESSES, MINTER_ADDRESS, ROUTER_ADDRESS, TokenType, TRACKED_DENOMS } from "../config";
+import { FILTERED_ADDRESSES, MINTER_ADDRESS, TokenType, TRACKED_DENOMS } from "../config";
 
 export async function handleTransferEvent(event: CosmosEvent): Promise<void> {
   const blockHeight = BigInt(event.block.block.header.height);
-  const otherEvents = event.tx.tx.events;
 
   logger.info(`New transfer at block ${blockHeight.toString()}`);
 
@@ -25,49 +24,6 @@ export async function handleTransferEvent(event: CosmosEvent): Promise<void> {
     recipientValue instanceof Uint8Array
       ? new TextDecoder("utf-8").decode(recipientValue)
       : recipientValue;
-
-  // Check for staking events
-  if (recipient == MINTER_ADDRESS && otherEvents.some(event => event.type == "wasm-fission/minter/stake-yield-tokens")) {
-    // If the sender if is the router contract, the sender is the one who executed the tx.
-    if (sender == ROUTER_ADDRESS) {
-      const executeEvent = otherEvents.find(event => event.type == "message");
-      if (!executeEvent || !executeEvent.attributes.some(attr => attr.key == "/cosmwasm.wasm.v1.MsgExecuteContract")) {
-        logger.error(`No execute event in stake tx ${JSON.stringify(event.tx)}`);
-        return;
-      }
-      const executorValue = executeEvent.attributes.find(attr => attr.key == "sender")?.value;
-      if (!executorValue) {
-        logger.error(`No executor in stake tx ${JSON.stringify(event.tx)}`);
-        return;
-      }
-      sender =
-        executorValue instanceof Uint8Array
-          ? new TextDecoder("utf-8").decode(executorValue)
-          : executorValue;
-    }
-    else {
-      // Else do nothing as staking is the same as a transfer to self
-      return;
-    }
-  }
-  // If this is an unstaking event, the sender is the one who executed the tx.
-  if (sender == MINTER_ADDRESS && otherEvents.some(event => event.type == "wasm-fission/minter/unstake-yield-tokens")) {
-
-    const executeEvent = otherEvents.find(event => event.type == "message");
-    if (!executeEvent || !executeEvent.attributes.some(attr => attr.key == "/cosmwasm.wasm.v1.MsgExecuteContract")) {
-      logger.error(`No execute event in unstake tx ${JSON.stringify(event.tx)}`);
-      return;
-    }
-    const executorValue = executeEvent.attributes.find(attr => attr.key == "sender")?.value;
-    if (!executorValue) {
-      logger.error(`No executor in unstake tx ${JSON.stringify(event.tx)}`);
-      return;
-    }
-    sender =
-      executorValue instanceof Uint8Array
-        ? new TextDecoder("utf-8").decode(executorValue)
-        : executorValue;
-  }
 
   const denomValue = event.event.attributes.find(
     (attr) => attr.key === "denom"
@@ -167,6 +123,161 @@ export async function handleTransferEvent(event: CosmosEvent): Promise<void> {
   }
 }
 
+export async function handleStakeEvent(event: CosmosEvent): Promise<void> {
+  const blockHeight = BigInt(event.block.block.header.height);
+
+  // Parse tx executor
+  const otherEvents = event.tx.tx.events;
+  const executeEvent = otherEvents.find(event => event.type == "message");
+  if (!executeEvent || !executeEvent.attributes.some(attr => attr.key == "/cosmwasm.wasm.v1.MsgExecuteContract")) {
+    logger.error(`No execute event in yield token mint tx ${JSON.stringify(event.tx)}`);
+    return;
+  }
+  const executorValue = executeEvent.attributes.find(attr => attr.key == "sender")?.value;
+  if (!executorValue) {
+    logger.error(`No executor in yield token mint tx ${JSON.stringify(event.tx)}`);
+    return;
+  }
+  const sender =
+    executorValue instanceof Uint8Array
+      ? new TextDecoder("utf-8").decode(executorValue)
+      : executorValue;
+
+  const contractAddressValue = event.event.attributes.find(
+    (attr) => attr.key === "_contract_address"
+  )?.value;
+  const contractAddress =
+    contractAddressValue instanceof Uint8Array
+      ? new TextDecoder("utf-8").decode(contractAddressValue)
+      : contractAddressValue;
+
+  if (contractAddress != MINTER_ADDRESS) {
+    return;
+  }
+
+  const amountValue = event.event.attributes.find(
+    (attr) => attr.key === "amount"
+  )?.value;
+  const amountStr =
+    amountValue instanceof Uint8Array
+      ? new TextDecoder("utf-8").decode(amountValue)
+      : amountValue;
+  const amount = BigInt(amountStr || "0");
+
+  if (amount == BigInt(0)) {
+    logger.error(`No amount in stake event ${JSON.stringify(event.event)}`);
+    return;
+  }
+
+  const denomValue = event.event.attributes.find(
+    (attr) => attr.key === "staked_token_denom"
+  )?.value;
+  const denom =
+    denomValue instanceof Uint8Array
+      ? new TextDecoder("utf-8").decode(denomValue)
+      : denomValue;
+
+  if (!denom) {
+    logger.error(`No denom in stake event ${JSON.stringify(event.event)}`);
+    return;
+  }
+
+  // Get stakers old balance
+  const oldBalance = await TokenBalance.getByFields(
+    [
+      ["address", "=", sender],
+      ["denom", "=", `staked-${denom}`],
+    ],
+    { orderBy: "blockHeight", orderDirection: "DESC", limit: 1 }
+  );
+  if (!oldBalance) {
+    const balance = await TokenBalance.create({
+      id: `${event.tx.hash}-${event.idx}`,
+      blockHeight,
+      address: sender,
+      denom: `staked-${denom}`,
+      balance: amount,
+    });
+    await balance.save();
+  }
+  else {
+    oldBalance[0].balance += amount;
+    await oldBalance[0].save();
+  }
+}
+
+export async function handleUnstakeEvent(event: CosmosEvent): Promise<void> {
+  const blockHeight = BigInt(event.block.block.header.height);
+
+  // Parse tx executor
+  const otherEvents = event.tx.tx.events;
+  const executeEvent = otherEvents.find(event => event.type == "message");
+  if (!executeEvent || !executeEvent.attributes.some(attr => attr.key == "/cosmwasm.wasm.v1.MsgExecuteContract")) {
+    logger.error(`No execute event in yield token mint tx ${JSON.stringify(event.tx)}`);
+    return;
+  }
+  const executorValue = executeEvent.attributes.find(attr => attr.key == "sender")?.value;
+  if (!executorValue) {
+    logger.error(`No executor in yield token mint tx ${JSON.stringify(event.tx)}`);
+    return;
+  }
+  const sender =
+    executorValue instanceof Uint8Array
+      ? new TextDecoder("utf-8").decode(executorValue)
+      : executorValue;
+
+
+  const amountValue = event.event.attributes.find(
+    (attr) => attr.key === "amount"
+  )?.value;
+  const amountStr =
+    amountValue instanceof Uint8Array
+      ? new TextDecoder("utf-8").decode(amountValue)
+      : amountValue;
+  const amount = BigInt(amountStr || "0");
+
+  if (amount == BigInt(0)) {
+    logger.error(`No amount in stake event ${JSON.stringify(event.event)}`);
+    return;
+  }
+
+  const denomValue = event.event.attributes.find(
+    (attr) => attr.key === "staked_token_denom"
+  )?.value;
+  const denom =
+    denomValue instanceof Uint8Array
+      ? new TextDecoder("utf-8").decode(denomValue)
+      : denomValue;
+
+  if (!denom) {
+    logger.error(`No denom in stake event ${JSON.stringify(event.event)}`);
+    return;
+  }
+
+  // Get stakers old balance
+  const oldBalance = await TokenBalance.getByFields(
+    [
+      ["address", "=", sender],
+      ["denom", "=", `staked-${denom}`],
+    ],
+    { orderBy: "blockHeight", orderDirection: "DESC", limit: 1 }
+  );
+  if (!oldBalance) {
+    const balance = await TokenBalance.create({
+      id: `${event.tx.hash}-${event.idx}`,
+      blockHeight,
+      address: sender,
+      denom: `staked-${denom}`,
+      balance: amount,
+    });
+    await balance.save();
+  }
+  else {
+    oldBalance[0].balance -= amount;
+    await oldBalance[0].save();
+  }
+}
+
 export async function handleMintEvent(event: CosmosEvent): Promise<void> {
   const blockHeight = BigInt(event.block.block.header.height);
   const otherEvents = event.tx.tx.events;
@@ -204,24 +315,6 @@ export async function handleMintEvent(event: CosmosEvent): Promise<void> {
     const token = TRACKED_DENOMS.find(token => token.denom === denom);
     if (token === undefined) {
       continue;
-    }
-
-    // If this is a yield token and the yield token is auto-staked in the same tx, the recipient is the caller
-    if (token.type === TokenType.Yield && recipient == MINTER_ADDRESS) {
-      const executeEvent = otherEvents.find(event => event.type == "message");
-      if (!executeEvent || !executeEvent.attributes.some(attr => attr.key == "/cosmwasm.wasm.v1.MsgExecuteContract")) {
-        logger.error(`No execute event in yield token mint tx ${JSON.stringify(event.tx)}`);
-        return;
-      }
-      const executorValue = executeEvent.attributes.find(attr => attr.key == "sender")?.value;
-      if (!executorValue) {
-        logger.error(`No executor in yield token mint tx ${JSON.stringify(event.tx)}`);
-        return;
-      }
-      recipient =
-        executorValue instanceof Uint8Array
-          ? new TextDecoder("utf-8").decode(executorValue)
-          : executorValue;
     }
 
     const mintRecord = Mint.create({
