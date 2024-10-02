@@ -8,6 +8,8 @@ export const AMM_ADDRESS =
 export const ROUTER_ADDRESS =
   "neutron1a9vwa9t3np6wlcwhz4rfzyrkmuj8r389whyshh4ypm6l0s2pzkmqt224zg";
 
+export const FILTERED_ADDRESSES = [MINTER_ADDRESS, AMM_ADDRESS, ROUTER_ADDRESS];
+
 export type Token = {
   denom: string;
   type: TokenType;
