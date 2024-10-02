@@ -76,7 +76,7 @@ export async function handleTransferEvent(event: CosmosEvent): Promise<void> {
     await transferRecord.save();
 
     // Get the latest token balance for the sender
-    const senderBalance = (
+    let senderBalance: TokenBalance | undefined = (
       await TokenBalance.getByFields(
         [
           ["address", "=", sender],
@@ -85,9 +85,18 @@ export async function handleTransferEvent(event: CosmosEvent): Promise<void> {
         { orderBy: "blockHeight", orderDirection: "DESC", limit: 1 }
       )
     )[0];
+    if (!senderBalance) {
+      senderBalance = await TokenBalance.create({
+        id: `${blockHeight.toString()}-${sender}-${denom}`,
+        blockHeight,
+        address: sender,
+        denom,
+        balance: BigInt(0),
+      });
+    }
 
     // Get the latest token balance for the recipient
-    const recipientBalance = (
+    let recipientBalance: TokenBalance | undefined = (
       await TokenBalance.getByFields(
         [
           ["address", "=", recipient],
@@ -96,34 +105,27 @@ export async function handleTransferEvent(event: CosmosEvent): Promise<void> {
         { orderBy: "blockHeight", orderDirection: "DESC", limit: 1 }
       )
     )[0];
+    if (!recipientBalance) {
+      recipientBalance = await TokenBalance.create({
+        id: `${blockHeight.toString()}-${recipient}-${denom}`,
+        blockHeight,
+        address: recipient,
+        denom,
+        balance: BigInt(0),
+      });
+    }
 
-    // Save the new token balances. If the balance already exists for this block overwrite it with the new balance
-    await store.set(
-      "TokenBalance",
-      `${blockHeight.toString()}-${sender}-${denom}`,
-      new TokenBalance(
-        `${blockHeight.toString()}-${sender}-${denom}`,
-        blockHeight,
-        sender,
-        denom,
-        senderBalance.balance - BigInt(amount)
-      )
-    );
-    await store.set(
-      "TokenBalance",
-      `${blockHeight.toString()}-${recipient}-${denom}`,
-      new TokenBalance(
-        `${blockHeight.toString()}-${recipient}-${denom}`,
-        blockHeight,
-        recipient,
-        denom,
-        recipientBalance.balance + BigInt(amount)
-      )
-    );
+    // Save the new token balances.
+    senderBalance.balance -= BigInt(amount);
+    await senderBalance.save();
+    recipientBalance.balance += BigInt(amount);
+    await recipientBalance.save();
   }
 }
 
 export async function handleStakeEvent(event: CosmosEvent): Promise<void> {
+  logger.info(`New stake at block ${event.block.block.header.height.toString()}`);
+
   const blockHeight = BigInt(event.block.block.header.height);
 
   // Parse tx executor
@@ -207,6 +209,7 @@ export async function handleStakeEvent(event: CosmosEvent): Promise<void> {
 }
 
 export async function handleUnstakeEvent(event: CosmosEvent): Promise<void> {
+  logger.info(`New unstake at block ${event.block.block.header.height.toString()}`);
   const blockHeight = BigInt(event.block.block.header.height);
 
   // Parse tx executor
@@ -280,7 +283,6 @@ export async function handleUnstakeEvent(event: CosmosEvent): Promise<void> {
 
 export async function handleMintEvent(event: CosmosEvent): Promise<void> {
   const blockHeight = BigInt(event.block.block.header.height);
-  const otherEvents = event.tx.tx.events;
 
   logger.info(`New mint at block ${blockHeight.toString()}`);
 
@@ -328,7 +330,7 @@ export async function handleMintEvent(event: CosmosEvent): Promise<void> {
     await mintRecord.save();
 
     // Get the latest token balance for the recipient
-    const recipientBalance = (
+    let recipientBalance: TokenBalance | undefined = (
       await TokenBalance.getByFields(
         [
           ["address", "=", recipient],
@@ -337,19 +339,19 @@ export async function handleMintEvent(event: CosmosEvent): Promise<void> {
         { orderBy: "blockHeight", orderDirection: "DESC", limit: 1 }
       )
     )[0];
+    if (!recipientBalance) {
+      recipientBalance = await TokenBalance.create({
+        id: `${blockHeight.toString()}-${recipient}-${denom}`,
+        blockHeight,
+        address: recipient,
+        denom,
+        balance: BigInt(0),
+      });
+    }
 
     // Update the token balance for the recipient, if it exists, otherwise create it
-    await store.set(
-      "TokenBalance",
-      `${blockHeight.toString()}-${recipient}-${denom}`,
-      new TokenBalance(
-        `${blockHeight.toString()}-${recipient}-${denom}`,
-        blockHeight,
-        recipient,
-        denom,
-        recipientBalance.balance + BigInt(amount)
-      )
-    );
+    recipientBalance.balance += BigInt(amount);
+    await recipientBalance.save();
   }
 }
 
@@ -402,7 +404,7 @@ export async function handleBurnEvent(event: CosmosEvent): Promise<void> {
     await burnRecord.save();
 
     // Get the latest token balance for the sender
-    const senderBalance = (
+    let senderBalance: TokenBalance | undefined = (
       await TokenBalance.getByFields(
         [
           ["address", "=", sender],
@@ -411,19 +413,19 @@ export async function handleBurnEvent(event: CosmosEvent): Promise<void> {
         { orderBy: "blockHeight", orderDirection: "DESC", limit: 1 }
       )
     )[0];
+    if (!senderBalance) {
+      senderBalance = await TokenBalance.create({
+        id: `${blockHeight.toString()}-${sender}-${denom}`,
+        blockHeight,
+        address: sender,
+        denom,
+        balance: BigInt(0),
+      });
+    }
 
     // Update the token balance for the sender, if it exists, otherwise create it
-    await store.set(
-      "TokenBalance",
-      `${blockHeight.toString()}-${sender}-${denom}`,
-      new TokenBalance(
-        `${blockHeight.toString()}-${sender}-${denom}`,
-        blockHeight,
-        sender,
-        denom,
-        senderBalance.balance - BigInt(amount)
-      )
-    );
+    senderBalance.balance -= BigInt(amount);
+    await senderBalance.save();
   }
 }
 
