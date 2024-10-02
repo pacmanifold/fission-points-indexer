@@ -1,24 +1,8 @@
-import {
-  CosmosEvent,
-  CosmosBlock,
-  CosmosMessage,
-  CosmosTransaction,
-} from "@subql/types-cosmos";
-import {
-  Burn,
-  Claim,
-  DailyClaimSummary,
-  Mint,
-  MinterRedeem,
-  MinterSplit,
-  TokenBalance,
-  Transfer,
-} from "../types";
+import { CosmosEvent, CosmosBlock } from "@subql/types-cosmos";
+import { Burn, Mint, PointsBalance, TokenBalance, Transfer } from "../types";
 import { logger } from "../logger";
-import { coin, parseCoins } from "@cosmjs/proto-signing";
-import { QueryClient } from "@cosmjs/stargate";
-import { Tendermint34Client } from "@cosmjs/tendermint-rpc";
-import { TRACKED_DENOMS } from "../config";
+import { parseCoins } from "@cosmjs/proto-signing";
+import { POINTS_MULTIPLIERS, TRACKED_DENOMS } from "../config";
 
 export async function handleTransferEvent(event: CosmosEvent): Promise<void> {
   const blockHeight = BigInt(event.block.block.header.height);
@@ -283,5 +267,51 @@ export async function handleBurnEvent(event: CosmosEvent): Promise<void> {
         senderBalance.balance - BigInt(amount)
       )
     );
+  }
+}
+
+export async function handleAccumulatePoints(
+  block: CosmosBlock
+): Promise<void> {
+  const currentBlockHeight = BigInt(block.block.header.height);
+  const previousBlockHeight = currentBlockHeight - BigInt(1);
+
+  logger.info(`Accumulating points at block ${currentBlockHeight.toString()}`);
+
+  const pointsThisBlock = new Map<string, bigint>();
+
+  // For each tracked denom loop over all the token balances from the previous block
+  // and accumulate the points balances based on the multipliers
+  for (const denom in TRACKED_DENOMS) {
+    const tokenBalances = await TokenBalance.getByFields([
+      ["denom", "=", denom],
+      ["blockHeight", "=", previousBlockHeight.toString()],
+    ]);
+
+    const multiplier = POINTS_MULTIPLIERS[denom];
+
+    // Update the points for each address
+    for (const tokenBalance of tokenBalances) {
+      const points = tokenBalance.balance * multiplier;
+      const currentPoints =
+        pointsThisBlock.get(tokenBalance.address) || BigInt(0);
+      pointsThisBlock.set(tokenBalance.address, currentPoints + points);
+    }
+  }
+
+  // Create the points balances for each address for the current block
+  for (const [address, points] of pointsThisBlock) {
+    const previousPointsBalance = await PointsBalance.get(
+      `${previousBlockHeight.toString()}-${address}`
+    );
+    const pointsBalance = PointsBalance.create({
+      id: `${currentBlockHeight.toString()}-${address}`,
+      blockHeight: currentBlockHeight,
+      address,
+      balance: previousPointsBalance
+        ? previousPointsBalance.balance + points
+        : points,
+    });
+    await pointsBalance.save();
   }
 }

@@ -80,6 +80,10 @@ const project: CosmosProject = {
               type: "tf_mint",
             },
           },
+          {
+            handler: "handleAccumulatePoints",
+            kind: CosmosHandlerKind.Block,
+          },
         ],
       },
     },
