@@ -1,6 +1,5 @@
 import { CosmosEvent, CosmosBlock } from "@subql/types-cosmos";
 import { Burn, Mint, PointsBalance, TokenBalance, Transfer } from "../types";
-import { logger } from "../logger";
 import { parseCoins } from "@cosmjs/proto-signing";
 import { FILTERED_ADDRESSES, MINTER_ADDRESS, TokenType, TRACKED_DENOMS } from "../config";
 
