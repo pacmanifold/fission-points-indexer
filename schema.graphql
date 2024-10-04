@@ -33,15 +33,15 @@ type Burn @entity {
 
 type TokenBalance @entity {
   id: ID! # Index {blockHeight}-{address}-{denom}
-  blockHeight: BigInt!
-  address: String!
-  denom: String!
+  blockHeight: BigInt! @index
+  address: String! @index
+  denom: String! @index
   balance: BigInt!
 }
 
 type PointsBalance @entity {
   id: ID! # Index {blockHeight}-{address}
-  blockHeight: BigInt!
-  address: String!
+  blockHeight: BigInt! @index
+  address: String! @index(unique: true)
   balance: BigInt!
 }
