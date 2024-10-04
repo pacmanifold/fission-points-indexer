@@ -10,7 +10,8 @@
     "dev": "subql codegen && subql build && docker-compose pull && docker-compose up --remove-orphans",
     "prepack": "rm -rf dist && npm run build",
     "test": "jest",
-    "build:develop": "NODE_ENV=develop subql codegen && NODE_ENV=develop subql build"
+    "build:develop": "NODE_ENV=develop subql codegen && NODE_ENV=develop subql build",
+    "reset": "docker-compose down && rm -rf .data"
   },
   "homepage": "https://github.com/subquery/cosmos-subql-starter",
   "repository": "github:subquery/cosmos-subql-starter",
