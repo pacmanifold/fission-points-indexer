@@ -24,14 +24,6 @@ export async function handleTransferEvent(event: CosmosEvent): Promise<void> {
       ? new TextDecoder("utf-8").decode(recipientValue)
       : recipientValue;
 
-  const denomValue = event.event.attributes.find(
-    (attr) => attr.key === "denom"
-  )?.value;
-  const denom =
-    denomValue instanceof Uint8Array
-      ? new TextDecoder("utf-8").decode(denomValue)
-      : denomValue;
-
   const amountValue = event.event.attributes.find(
     (attr) => attr.key === "amount"
   )?.value;
@@ -40,9 +32,9 @@ export async function handleTransferEvent(event: CosmosEvent): Promise<void> {
       ? new TextDecoder("utf-8").decode(amountValue)
       : amountValue;
 
-  if (!denom || !sender || !recipient || !amount) {
+  if (!sender || !recipient || !amount) {
     logger.error(
-      `Denom, sender, recipient, or amount is undefined in event ${JSON.stringify(
+      `sender, recipient, or amount is undefined in event ${JSON.stringify(
         event.event
       )}`
     );
