@@ -42,6 +42,6 @@ type TokenBalance @entity {
 type PointsBalance @entity {
   id: ID! # Index {blockHeight}-{address}
   blockHeight: BigInt! @index
-  address: String! @index(unique: true)
+  address: String! @index
   balance: BigInt!
 }
