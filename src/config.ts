@@ -44,6 +44,12 @@ export const TRACKED_DENOMS: Token[] = [
     maturity: 1725638534,
   },
   {
+    denom: `factory/${AMM_ADDRESS}/LP/0`,
+    type: TokenType.LP,
+    multiplier: BigInt(1),
+    maturity: 1725638534,
+  },
+  {
     denom: "factory/neutron1txq2q76veh5j0yxv308vr4etej996vvmnsux08ltl03jmwa27cjseldg28/P/240913/xyk/5m/wstETH/axlWETH",
     type: TokenType.Principal,
     multiplier: BigInt(1),
@@ -58,6 +64,12 @@ export const TRACKED_DENOMS: Token[] = [
   {
     denom: "staked-factory/neutron1txq2q76veh5j0yxv308vr4etej996vvmnsux08ltl03jmwa27cjseldg28/Y/240913/xyk/5m/wstETH/axlWETH",
     type: TokenType.StakedYield,
+    multiplier: BigInt(1),
+    maturity: 1726243334,
+  },
+  {
+    denom: `factory/${AMM_ADDRESS}/LP/1`,
+    type: TokenType.LP,
     multiplier: BigInt(1),
     maturity: 1726243334,
   },
@@ -79,8 +91,14 @@ export const TRACKED_DENOMS: Token[] = [
     multiplier: BigInt(1),
     maturity: 1728230534,
   },
+  {
+    denom: `factory/${AMM_ADDRESS}/LP/2`,
+    type: TokenType.LP,
+    multiplier: BigInt(1),
+    maturity: 1728230534,
+  },
 ];
 
-export const START_BLOCK = 18538216;
+export const START_BLOCK = 18646814;
 
 export const POINTS_PER_BLOCK = 1_000_000_000;
