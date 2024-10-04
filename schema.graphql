@@ -20,6 +20,7 @@ type Mint @entity {
   date: Date!
   denom: String!
   amount: BigInt!
+  recipient: String!
 }
 
 type Burn @entity {
@@ -29,10 +30,12 @@ type Burn @entity {
   date: Date!
   denom: String!
   amount: BigInt!
+  sender: String!
 }
 
 type TokenBalance @entity {
   id: ID! # Index {blockHeight}-{address}-{denom}
+  isLatest: Boolean! @index
   blockHeight: BigInt! @index
   address: String! @index
   denom: String! @index
@@ -41,6 +44,7 @@ type TokenBalance @entity {
 
 type PointsBalance @entity {
   id: ID! # Index {blockHeight}-{address}
+  isLatest: Boolean! @index
   blockHeight: BigInt! @index
   address: String! @index
   balance: BigInt!

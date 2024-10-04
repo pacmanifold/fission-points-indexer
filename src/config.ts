@@ -7,6 +7,7 @@ export const AMM_ADDRESS =
   "neutron16n4wghx4leskv95r48sx603vcg44ussrtuz9x4v4lah3vvnmlxeqzjl7vf";
 export const ROUTER_ADDRESS =
   "neutron1a9vwa9t3np6wlcwhz4rfzyrkmuj8r389whyshh4ypm6l0s2pzkmqt224zg";
+export const TOKENFACTORY_ADDRESS = "neutron19ejy8n9qsectrf4semdp9cpknflld0j6el50hx";
 
 export const FILTERED_ADDRESSES = [MINTER_ADDRESS, AMM_ADDRESS, ROUTER_ADDRESS];
 

@@ -1,12 +1,52 @@
 import { CosmosEvent, CosmosBlock } from "@subql/types-cosmos";
 import { Burn, Mint, PointsBalance, TokenBalance, Transfer } from "../types";
 import { parseCoins } from "@cosmjs/proto-signing";
-import { FILTERED_ADDRESSES, MINTER_ADDRESS, TokenType, TRACKED_DENOMS } from "../config";
+import { FILTERED_ADDRESSES, MINTER_ADDRESS, TOKENFACTORY_ADDRESS, TRACKED_DENOMS } from "../config";
+
+async function updateTokenBalance(blockHeight: bigint, address: string, denom: string, balanceChange: bigint) {
+  // Read the last token balance and store it if it doesn't exist
+  let latestTokenBalance: TokenBalance | undefined = (await TokenBalance.getByFields([
+    ["address", "=", address],
+    ["denom", "=", denom],
+    ["isLatest", "=", true],
+  ], {limit: 1}))[0];
+  if (!latestTokenBalance) {
+    latestTokenBalance = TokenBalance.create({
+          id: `${blockHeight}-${address}-${denom}`,
+          blockHeight,
+          address,
+          denom,
+          balance: balanceChange,
+          isLatest: true,
+      });
+      await latestTokenBalance.save();
+      return;
+  }
+
+  // If the last stored block is this block, then we can just update the token balance
+  if (latestTokenBalance.blockHeight == blockHeight) {
+    latestTokenBalance.balance += balanceChange;
+    await latestTokenBalance.save();
+    return;
+  }
+
+  // Otherwise, update the old latest state and create a new latest token balance
+  latestTokenBalance.isLatest = false;
+  await latestTokenBalance.save();
+
+  const newTokenBalance = TokenBalance.create({
+      id: `${blockHeight}-${address}-${denom}`,
+      blockHeight,
+      address,
+      denom,
+      balance: balanceChange,
+      isLatest: true,
+  });
+  await newTokenBalance.save();
+}
 
 export async function handleTransferEvent(event: CosmosEvent): Promise<void> {
   const blockHeight = BigInt(event.block.block.header.height);
-
-  logger.info(`New transfer at block ${blockHeight.toString()}`);
 
   const senderValue = event.event.attributes.find(
     (attr) => attr.key === "sender"
@@ -15,6 +55,11 @@ export async function handleTransferEvent(event: CosmosEvent): Promise<void> {
     senderValue instanceof Uint8Array
       ? new TextDecoder("utf-8").decode(senderValue)
       : senderValue;
+
+  // Filter out transfers from the token factory module, as we handle them in the mint event handler
+  if (sender == TOKENFACTORY_ADDRESS) {
+    return;
+  }
 
   const recipientValue = event.event.attributes.find(
     (attr) => attr.key === "recipient"
@@ -54,63 +99,23 @@ export async function handleTransferEvent(event: CosmosEvent): Promise<void> {
       continue;
     }
 
+    logger.info(`New transfer at block ${blockHeight.toString()}. Sender: ${sender}, Recipient: ${recipient}, Amount: ${amount}, Denom: ${denom}`);
+
     const transferRecord = Transfer.create({
       id: `${event.tx.hash}-${event.idx}`,
       blockHeight,
       date: new Date(event.block.header.time.toISOString()),
       transactionHash: event.tx.hash,
-      amount: BigInt(0),
+      amount: BigInt(amount),
       recipient,
       sender,
       denom,
     });
     await transferRecord.save();
 
-    // Get the latest token balance for the sender
-    let senderBalance: TokenBalance | undefined = (
-      await TokenBalance.getByFields(
-        [
-          ["address", "=", sender],
-          ["denom", "=", denom],
-        ],
-        { orderBy: "blockHeight", orderDirection: "DESC", limit: 1 }
-      )
-    )[0];
-    if (!senderBalance) {
-      senderBalance = await TokenBalance.create({
-        id: `${blockHeight.toString()}-${sender}-${denom}`,
-        blockHeight,
-        address: sender,
-        denom,
-        balance: BigInt(0),
-      });
-    }
-
-    // Get the latest token balance for the recipient
-    let recipientBalance: TokenBalance | undefined = (
-      await TokenBalance.getByFields(
-        [
-          ["address", "=", recipient],
-          ["denom", "=", denom],
-        ],
-        { orderBy: "blockHeight", orderDirection: "DESC", limit: 1 }
-      )
-    )[0];
-    if (!recipientBalance) {
-      recipientBalance = await TokenBalance.create({
-        id: `${blockHeight.toString()}-${recipient}-${denom}`,
-        blockHeight,
-        address: recipient,
-        denom,
-        balance: BigInt(0),
-      });
-    }
-
     // Save the new token balances.
-    senderBalance.balance -= BigInt(amount);
-    await senderBalance.save();
-    recipientBalance.balance += BigInt(amount);
-    await recipientBalance.save();
+    updateTokenBalance(blockHeight, sender, denom, -BigInt(amount));
+    updateTokenBalance(blockHeight, recipient, denom, BigInt(amount));
   }
 }
 
@@ -175,28 +180,8 @@ export async function handleStakeEvent(event: CosmosEvent): Promise<void> {
     return;
   }
 
-  // Get stakers old balance
-  const oldBalance = await TokenBalance.getByFields(
-    [
-      ["address", "=", sender],
-      ["denom", "=", `staked-${denom}`],
-    ],
-    { orderBy: "blockHeight", orderDirection: "DESC", limit: 1 }
-  );
-  if (!oldBalance) {
-    const balance = await TokenBalance.create({
-      id: `${event.tx.hash}-${event.idx}`,
-      blockHeight,
-      address: sender,
-      denom: `staked-${denom}`,
-      balance: amount,
-    });
-    await balance.save();
-  }
-  else {
-    oldBalance[0].balance += amount;
-    await oldBalance[0].save();
-  }
+  // Update the staked token balance
+  updateTokenBalance(blockHeight, sender, `staked-${denom}`, amount);
 }
 
 export async function handleUnstakeEvent(event: CosmosEvent): Promise<void> {
@@ -248,34 +233,14 @@ export async function handleUnstakeEvent(event: CosmosEvent): Promise<void> {
     return;
   }
 
-  // Get stakers old balance
-  const oldBalance = await TokenBalance.getByFields(
-    [
-      ["address", "=", sender],
-      ["denom", "=", `staked-${denom}`],
-    ],
-    { orderBy: "blockHeight", orderDirection: "DESC", limit: 1 }
-  );
-  if (!oldBalance) {
-    const balance = await TokenBalance.create({
-      id: `${event.tx.hash}-${event.idx}`,
-      blockHeight,
-      address: sender,
-      denom: `staked-${denom}`,
-      balance: amount,
-    });
-    await balance.save();
-  }
-  else {
-    oldBalance[0].balance -= amount;
-    await oldBalance[0].save();
-  }
+  // Update the staked token balance
+  updateTokenBalance(blockHeight, sender, `staked-${denom}`, -amount);
 }
 
 export async function handleMintEvent(event: CosmosEvent): Promise<void> {
   const blockHeight = BigInt(event.block.block.header.height);
 
-  logger.info(`New mint at block ${blockHeight.toString()}`);
+
 
   const amountValue = event.event.attributes.find(
     (attr) => attr.key === "amount"
@@ -300,8 +265,6 @@ export async function handleMintEvent(event: CosmosEvent): Promise<void> {
     return;
   }
 
-  logger.info(`Mint amount: ${amount}, recipient: ${recipient}`);
-
   const coins = parseCoins(amount);
 
   for (const { denom, amount } of coins) {
@@ -309,6 +272,7 @@ export async function handleMintEvent(event: CosmosEvent): Promise<void> {
     if (token === undefined) {
       continue;
     }
+    logger.info(`New mint at block ${blockHeight.toString()}. Mint amount: ${amount}, recipient: ${recipient}, denom: ${denom}`);
 
     const mintRecord = Mint.create({
       id: `${event.tx.hash}-${event.idx}`,
@@ -317,39 +281,17 @@ export async function handleMintEvent(event: CosmosEvent): Promise<void> {
       transactionHash: event.tx.hash,
       denom,
       amount: BigInt(amount),
+      recipient,
     });
     await mintRecord.save();
 
-    // Get the latest token balance for the recipient
-    let recipientBalance: TokenBalance | undefined = (
-      await TokenBalance.getByFields(
-        [
-          ["address", "=", recipient],
-          ["denom", "=", denom],
-        ],
-        { orderBy: "blockHeight", orderDirection: "DESC", limit: 1 }
-      )
-    )[0];
-    if (!recipientBalance) {
-      recipientBalance = await TokenBalance.create({
-        id: `${blockHeight.toString()}-${recipient}-${denom}`,
-        blockHeight,
-        address: recipient,
-        denom,
-        balance: BigInt(0),
-      });
-    }
-
     // Update the token balance for the recipient, if it exists, otherwise create it
-    recipientBalance.balance += BigInt(amount);
-    await recipientBalance.save();
+    updateTokenBalance(blockHeight, recipient, denom, BigInt(amount));
   }
 }
 
 export async function handleBurnEvent(event: CosmosEvent): Promise<void> {
   const blockHeight = BigInt(event.block.block.header.height);
-
-  logger.info(`New burn at block ${blockHeight.toString()}`);
 
   const amountValue = event.event.attributes.find(
     (attr) => attr.key === "amount"
@@ -374,7 +316,6 @@ export async function handleBurnEvent(event: CosmosEvent): Promise<void> {
     return;
   }
 
-  logger.info(`Burn amount: ${amount}, sender: ${sender}`);
 
   const coins = parseCoins(amount);
 
@@ -382,6 +323,8 @@ export async function handleBurnEvent(event: CosmosEvent): Promise<void> {
     if (!TRACKED_DENOMS.some(token => token.denom === denom)) {
       continue;
     }
+
+    logger.info(`New burn at block ${blockHeight.toString()}. Burn amount: ${amount}, sender: ${sender}`);
 
     // Create the burn record
     const burnRecord = Burn.create({
@@ -391,32 +334,12 @@ export async function handleBurnEvent(event: CosmosEvent): Promise<void> {
       transactionHash: event.tx.hash,
       denom,
       amount: BigInt(amount),
+      sender,
     });
     await burnRecord.save();
 
-    // Get the latest token balance for the sender
-    let senderBalance: TokenBalance | undefined = (
-      await TokenBalance.getByFields(
-        [
-          ["address", "=", sender],
-          ["denom", "=", denom],
-        ],
-        { orderBy: "blockHeight", orderDirection: "DESC", limit: 1 }
-      )
-    )[0];
-    if (!senderBalance) {
-      senderBalance = await TokenBalance.create({
-        id: `${blockHeight.toString()}-${sender}-${denom}`,
-        blockHeight,
-        address: sender,
-        denom,
-        balance: BigInt(0),
-      });
-    }
-
-    // Update the token balance for the sender, if it exists, otherwise create it
-    senderBalance.balance -= BigInt(amount);
-    await senderBalance.save();
+    // Update the token balance for the sender
+    updateTokenBalance(blockHeight, sender, denom, -BigInt(amount));
   }
 }
 
@@ -427,7 +350,9 @@ export async function handleAccumulatePoints(
   const currentBlockTime = block.block.header.time.getTime() / 1000;
   const previousBlockHeight = currentBlockHeight - BigInt(1);
 
-  logger.info(`Accumulating points at block ${currentBlockHeight.toString()}`);
+  if (currentBlockHeight <= BigInt(18646814 + 4)) {
+    logger.info(`Accumulating points at block ${currentBlockHeight.toString()}`);
+  }
 
   const pointsThisBlock = new Map<string, bigint>();
 
@@ -436,14 +361,23 @@ export async function handleAccumulatePoints(
   for (const token of TRACKED_DENOMS) {
     const tokenBalances = await TokenBalance.getByFields([
       ["denom", "=", token.denom],
-      ["blockHeight", "=", previousBlockHeight.toString()],
       ["address", "!in", FILTERED_ADDRESSES],
+      ["isLatest", "=", true],
     ]);
 
+    if (currentBlockHeight <= BigInt(18646814 + 4)) {
+      logger.info(`Token: ${JSON.stringify(token)}`);
+      logger.info(`Token balances: ${JSON.stringify(tokenBalances)}`);
+    }
     const multiplier = token.multiplier;
 
     // Update the points for each address
     for (const tokenBalance of tokenBalances) {
+      if (tokenBalance.blockHeight > previousBlockHeight) {
+        logger.error(`Token balance block height is greater than previous block height: ${tokenBalance.blockHeight.toString()} > ${previousBlockHeight.toString()}`);
+        continue;
+      }
+
       // Filter out tokens that have matured
       if (token.maturity <= currentBlockTime) {
         continue;
@@ -456,11 +390,21 @@ export async function handleAccumulatePoints(
     }
   }
 
+  if (currentBlockHeight <= BigInt(18646814 + 4)) {
+    logger.info(`Points this block: ${JSON.stringify(pointsThisBlock)}`);
+  }
+
   // Create the points balances for each address for the current block
   for (const [address, points] of pointsThisBlock) {
+    // Set the previous points balance isLatest field to false
     const previousPointsBalance = await PointsBalance.get(
       `${previousBlockHeight.toString()}-${address}`
     );
+    if (previousPointsBalance) {
+      previousPointsBalance.isLatest = false;
+      await previousPointsBalance.save();
+    }
+
     const pointsBalance = PointsBalance.create({
       id: `${currentBlockHeight.toString()}-${address}`,
       blockHeight: currentBlockHeight,
@@ -468,6 +412,7 @@ export async function handleAccumulatePoints(
       balance: previousPointsBalance
         ? previousPointsBalance.balance + points
         : points,
+      isLatest: true,
     });
     await pointsBalance.save();
   }
