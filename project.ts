@@ -61,9 +61,6 @@ const project: CosmosProject = {
             kind: CosmosHandlerKind.Event,
             filter: {
               type: "transfer",
-              messageFilter: {
-                type: "/cosmos.bank.v1beta1.MsgSend",
-              },
             },
           },
           {
