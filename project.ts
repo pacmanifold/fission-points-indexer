@@ -6,7 +6,7 @@ import {
 
 import * as dotenv from "dotenv";
 import path from "path";
-import { MINTER_ADDRESS } from "./src/config";
+import { START_BLOCK } from "./src/config";
 const mode = process.env.NODE_ENV || "production";
 
 // Load the appropriate .env file
@@ -52,12 +52,12 @@ const project: CosmosProject = {
   dataSources: [
     {
       kind: CosmosDatasourceKind.Runtime,
-      startBlock: 1,
+      startBlock: START_BLOCK,
       mapping: {
         file: "./dist/index.js",
         handlers: [
           {
-            handler: "handleTransfer",
+            handler: "handleTransferEvent",
             kind: CosmosHandlerKind.Event,
             filter: {
               type: "transfer",
