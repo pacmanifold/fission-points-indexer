@@ -3,6 +3,17 @@ import { Burn, Mint, PointsBalance, TokenBalance, Transfer } from "../types";
 import { parseCoins } from "@cosmjs/proto-signing";
 import { FILTERED_ADDRESSES, MINTER_ADDRESS, TOKENFACTORY_ADDRESS, TRACKED_DENOMS } from "../config";
 
+function parseCoinsAndLogError(amount: string): { denom: string, amount: string }[] {
+  let coins: { denom: string, amount: string }[] = [];
+  try {
+    coins = parseCoins(amount);
+  } catch (e) {
+    logger.error(`Error parsing coins: ${amount}. Error: ${e}`);
+    return [];
+  }
+  return coins;
+}
+
 async function updateTokenBalance(blockHeight: bigint, address: string, denom: string, balanceChange: bigint) {
   // Read the last token balance and store it if it doesn't exist
   let latestTokenBalance: TokenBalance | undefined = (await TokenBalance.getByFields([
@@ -86,7 +97,7 @@ export async function handleTransferEvent(event: CosmosEvent): Promise<void> {
     return;
   }
 
-  const coins = parseCoins(amount);
+  const coins = parseCoinsAndLogError(amount);
 
   if (coins.length === 0) {
     logger.error(`No coins in transfer event ${JSON.stringify(event.event)}`);
@@ -265,7 +276,7 @@ export async function handleMintEvent(event: CosmosEvent): Promise<void> {
     return;
   }
 
-  const coins = parseCoins(amount);
+  const coins = parseCoinsAndLogError(amount);
 
   for (const { denom, amount } of coins) {
     const token = TRACKED_DENOMS.find(token => token.denom === denom);
@@ -317,7 +328,7 @@ export async function handleBurnEvent(event: CosmosEvent): Promise<void> {
   }
 
 
-  const coins = parseCoins(amount);
+  const coins = parseCoinsAndLogError(amount);
 
   for (const { denom, amount } of coins) {
     if (!TRACKED_DENOMS.some(token => token.denom === denom)) {
